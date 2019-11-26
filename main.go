@@ -65,6 +65,8 @@ func defineFlags() *options {
 }
 
 func main() {
+	log.Println("Initializing rg-cleanup")
+
 	o := defineFlags()
 	if err := o.validateFlags(); err != nil {
 		log.Fatalf("Error when validating flags: %v", err)
@@ -77,18 +79,15 @@ func main() {
 
 	ticker := time.NewTicker(o.period)
 	ctx := context.Background()
-	for {
-		select {
-		case t := <-ticker.C:
-			if err := run(ctx, o.ttl, r, t); err != nil {
-				log.Fatalf("Error when running rg-cleanup: %v", err)
-			}
+	for ; true; <-ticker.C {
+		if err := run(ctx, o.ttl, r); err != nil {
+			log.Fatalf("Error when running rg-cleanup: %v", err)
 		}
 	}
 }
 
-func run(ctx context.Context, ttl time.Duration, r *resources.GroupsClient, t time.Time) error {
-	log.Printf("Running rg-cleanup on %v", t)
+func run(ctx context.Context, ttl time.Duration, r *resources.GroupsClient) error {
+	log.Println("Scanning for stale resource groups")
 	for list, err := r.ListComplete(ctx, "", nil); list.NotDone(); err = list.Next() {
 		if err != nil {
 			return fmt.Errorf("Error when listing all resource group: %v", err)
@@ -98,7 +97,7 @@ func run(ctx context.Context, ttl time.Duration, r *resources.GroupsClient, t ti
 		rgName := *rg.Name
 		if age, ok := shouldDeleteResourceGroup(rg, ttl); ok {
 			// Does not wait when deleting a resource group
-			log.Printf("Deleting %s (age: %s)", rgName, age)
+			log.Printf("Deleting resource group '%s' (age: %s)", rgName, age)
 			_, err = r.Delete(ctx, rgName)
 			if err != nil {
 				log.Printf("Error when deleting %s: %v", rgName, err)
