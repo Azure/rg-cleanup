@@ -121,16 +121,16 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 		return "", false
 	}
 
-	if creationTimestamp, ok := rg.Tags[creationTimestampTag]; ok {
-		t, err := time.Parse(time.RFC3339, *creationTimestamp)
-		if err != nil {
-			return "", false
-		}
-
-		return time.Since(t).String(), time.Since(t) >= ttl
+	creationTimestamp, ok := rg.Tags[creationTimestampTag]
+	if !ok {
+		return fmt.Sprintf("probably a long time because it does not have a '%s' tag", creationTimestampTag), true
 	}
 
-	return "", false
+	t, err := time.Parse(time.RFC3339, *creationTimestamp)
+	if err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }
 
 func getResourceGroupClient(env azure.Environment, clientID, clientSecret, tenantID, subscriptionID string) (*resources.GroupsClient, error) {

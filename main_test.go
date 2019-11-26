@@ -12,42 +12,51 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 	now := time.Now().Format(time.RFC3339)
 	threeDaysAgo := time.Now().Add(-defaultTTL).Format(time.RFC3339)
 	testCases := []struct {
-		desc     string
-		rg       resources.Group
-		expected bool
+		desc                string
+		rg                  resources.Group
+		expectedToBeDeleted bool
+		expectedAge         string
 	}{
 		{
-			desc:     "deletable resource group that has not lived for more than 3 days",
-			rg:       getResourceGroup("kubetest-123", now),
-			expected: false,
+			desc:                "deletable resource group that has not lived for more than 3 days",
+			rg:                  getResourceGroup("kubetest-123", now),
+			expectedToBeDeleted: false,
+			expectedAge:         "0 days",
 		},
 		{
-			desc:     "deletable resource group that lives for more than 3 days",
-			rg:       getResourceGroup("kubetest-456", threeDaysAgo),
-			expected: true,
+			desc:                "deletable resource group that lives for more than 3 days",
+			rg:                  getResourceGroup("kubetest-456", threeDaysAgo),
+			expectedToBeDeleted: true,
+			expectedAge:         "3 days",
 		},
 		{
-			desc:     "non-deletable resource group",
-			rg:       getResourceGroup("resource group", now),
-			expected: false,
+			desc:                "non-deletable resource group",
+			rg:                  getResourceGroup("resource group", now),
+			expectedToBeDeleted: false,
+			expectedAge:         "",
 		},
 		{
-			desc:     "deletable resource group with no creation timestamp",
-			rg:       getResourceGroup("kubetest-789", ""),
-			expected: false,
+			desc:                "deletable resource group with no creation timestamp",
+			rg:                  getResourceGroup("kubetest-789", ""),
+			expectedToBeDeleted: true,
+			expectedAge:         "probably a long time because it does not have a 'creationTimestamp' tag",
 		},
 		{
-			desc:     "deletable resource group with invalid creation timestamp",
-			rg:       getResourceGroup("kubetest-789", "invalid creation timestamp"),
-			expected: false,
+			desc:                "deletable resource group with invalid creation timestamp",
+			rg:                  getResourceGroup("kubetest-789", "invalid creation timestamp"),
+			expectedToBeDeleted: false,
+			expectedAge:         "",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, result := shouldDeleteResourceGroup(tc.rg, defaultTTL)
-			if result != tc.expected {
-				t.Fatalf("expected %t, but got %t", tc.expected, result)
+			age, ok := shouldDeleteResourceGroup(tc.rg, defaultTTL)
+			if ok != tc.expectedToBeDeleted {
+				t.Fatalf("expected %t, but got %t", tc.expectedToBeDeleted, ok)
+			}
+			if age != tc.expectedAge {
+				t.Fatalf("expected the resource group age to be '%s', but got '%s'", tc.expectedAge, age)
 			}
 		})
 	}
