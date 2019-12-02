@@ -9,8 +9,8 @@ import (
 )
 
 func TestShouldDeleteResourceGroup(t *testing.T) {
-	now := time.Now().Format(time.RFC3339)
-	threeDaysAgo := time.Now().Add(-defaultTTL).Format(time.RFC3339)
+	oneDayAgo := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	fourDaysAgo := time.Now().Add(-defaultTTL - 24*time.Hour).Format(time.RFC3339)
 	testCases := []struct {
 		desc                string
 		rg                  resources.Group
@@ -19,19 +19,31 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 	}{
 		{
 			desc:                "deletable resource group that has not lived for more than 3 days",
-			rg:                  getResourceGroup("kubetest-123", now),
+			rg:                  getResourceGroup("kubetest-123", oneDayAgo),
 			expectedToBeDeleted: false,
-			expectedAge:         "0 days",
+			expectedAge:         "1 days",
 		},
 		{
-			desc:                "deletable resource group that lives for more than 3 days",
-			rg:                  getResourceGroup("kubetest-456", threeDaysAgo),
+			desc:                "kubetest resource group that lives for more than 3 days",
+			rg:                  getResourceGroup("kubetest-456", fourDaysAgo),
 			expectedToBeDeleted: true,
-			expectedAge:         "3 days",
+			expectedAge:         "4 days",
+		},
+		{
+			desc:                "azuredisk-csi-driver resource group that lives for more than 3 days",
+			rg:                  getResourceGroup("azuredisk-csi-driver-456", fourDaysAgo),
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
+			desc:                "azurefile-csi-driver resource group that lives for more than 3 days",
+			rg:                  getResourceGroup("azurefile-csi-driver-456", fourDaysAgo),
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
 		},
 		{
 			desc:                "non-deletable resource group",
-			rg:                  getResourceGroup("resource group", now),
+			rg:                  getResourceGroup("resource group", fourDaysAgo),
 			expectedToBeDeleted: false,
 			expectedAge:         "",
 		},

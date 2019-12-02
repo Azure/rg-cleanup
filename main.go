@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -15,16 +16,19 @@ import (
 )
 
 const (
-	creationTimestampTag = "creationTimestamp"
-	defaultTTL           = 3 * 24 * time.Hour
-	defaultPeriod        = 24 * time.Hour
+	defaultTTL            = 3 * 24 * time.Hour
+	creationTimestampTag  = "creationTimestamp"
+	aadClientIDEnvVar     = "AAD_CLIENT_ID"
+	aadClientSecretEnvVar = "AAD_CLIENT_SECRET"
+	tenantIDEnvVar        = "TENANT_ID"
+	subscriptionIDEnvVar  = "SUBSCRIPTION_ID"
 )
 
 // Consider resource groups with one of the following prefixes deletable
 var deletableResourceGroupPrefixes = []string{
 	"kubetest-",
 	"azuredisk-csi-driver-",
-	"azuredisk-csi-driver-",
+	"azurefile-csi-driver-",
 }
 
 type options struct {
@@ -32,34 +36,34 @@ type options struct {
 	clientSecret   string
 	tenantID       string
 	subscriptionID string
+	dryRun         bool
 	ttl            time.Duration
-	period         time.Duration
 }
 
-func (o *options) validateFlags() error {
+func (o *options) validate() error {
 	if o.clientID == "" {
-		return fmt.Errorf("--client-id is empty")
+		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
 	}
 	if o.clientSecret == "" {
-		return fmt.Errorf("--client-secret is empty")
+		return fmt.Errorf("$%s is empty", aadClientSecretEnvVar)
 	}
 	if o.tenantID == "" {
-		return fmt.Errorf("--tenant-id is empty")
+		return fmt.Errorf("$%s is empty", tenantIDEnvVar)
 	}
 	if o.subscriptionID == "" {
-		return fmt.Errorf("--subscription-id is empty")
+		return fmt.Errorf("$%s is empty", subscriptionIDEnvVar)
 	}
 	return nil
 }
 
-func defineFlags() *options {
+func defineOptions() *options {
 	o := options{}
-	flag.StringVar(&o.clientID, "client-id", "", "The client ID of the service principal.")
-	flag.StringVar(&o.clientSecret, "client-secret", "", "The client secret of the service principal.")
-	flag.StringVar(&o.tenantID, "tenant-id", "", "The tenant ID of the service principal.")
-	flag.StringVar(&o.subscriptionID, "subscription-id", "", "The Azure subscription ID.")
+	o.clientID = os.Getenv(aadClientIDEnvVar)
+	o.clientSecret = os.Getenv(aadClientSecretEnvVar)
+	o.tenantID = os.Getenv(tenantIDEnvVar)
+	o.subscriptionID = os.Getenv(subscriptionIDEnvVar)
+	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
-	flag.DurationVar(&o.period, "period", defaultPeriod, "How often we should clean up stale resource groups.")
 	flag.Parse()
 	return &o
 }
@@ -67,9 +71,13 @@ func defineFlags() *options {
 func main() {
 	log.Println("Initializing rg-cleanup")
 
-	o := defineFlags()
-	if err := o.validateFlags(); err != nil {
-		log.Fatalf("Error when validating flags: %v", err)
+	o := defineOptions()
+	if err := o.validate(); err != nil {
+		log.Fatalf("Error when validating options: %v", err)
+	}
+
+	if o.dryRun {
+		log.Println("Dry-run enabled - printing logs but not actually deleting resource groups")
 	}
 
 	r, err := getResourceGroupClient(azure.PublicCloud, o.clientID, o.clientSecret, o.tenantID, o.subscriptionID)
@@ -77,20 +85,16 @@ func main() {
 		log.Fatalf("Error when obtaining resource group client: %v", err)
 	}
 
-	ticker := time.NewTicker(o.period)
-	ctx := context.Background()
-	for ; true; <-ticker.C {
-		if err := run(ctx, o.ttl, r); err != nil {
-			log.Fatalf("Error when running rg-cleanup: %v", err)
-		}
+	if err := run(context.Background(), r, o.ttl, o.dryRun); err != nil {
+		log.Fatalf("Error when running rg-cleanup: %v", err)
 	}
 }
 
-func run(ctx context.Context, ttl time.Duration, r *resources.GroupsClient) error {
+func run(ctx context.Context, r *resources.GroupsClient, ttl time.Duration, dryRun bool) error {
 	log.Println("Scanning for stale resource groups")
 	for list, err := r.ListComplete(ctx, "", nil); list.NotDone(); err = list.Next() {
 		if err != nil {
-			return fmt.Errorf("Error when listing all resource group: %v", err)
+			return fmt.Errorf("Error when listing all resource groups: %v", err)
 		}
 
 		rg := list.Value()
@@ -98,10 +102,13 @@ func run(ctx context.Context, ttl time.Duration, r *resources.GroupsClient) erro
 		if age, ok := shouldDeleteResourceGroup(rg, ttl); ok {
 			// Does not wait when deleting a resource group
 			log.Printf("Deleting resource group '%s' (age: %s)", rgName, age)
+			if dryRun {
+				continue
+			}
+
 			_, err = r.Delete(ctx, rgName)
 			if err != nil {
 				log.Printf("Error when deleting %s: %v", rgName, err)
-				continue
 			}
 		}
 	}
