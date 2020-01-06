@@ -29,6 +29,7 @@ var deletableResourceGroupPrefixes = []string{
 	"kubetest-",
 	"azuredisk-csi-driver-",
 	"azurefile-csi-driver-",
+	"blobfuse-csi-driver-",
 }
 
 type options struct {

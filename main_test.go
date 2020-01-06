@@ -42,6 +42,12 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 			expectedAge:         "4 days",
 		},
 		{
+			desc:                "blobfuse-csi-driver resource group that lives for more than 3 days",
+			rg:                  getResourceGroup("blobfuse-csi-driver-456", fourDaysAgo),
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
 			desc:                "non-deletable resource group",
 			rg:                  getResourceGroup("resource group", fourDaysAgo),
 			expectedToBeDeleted: false,

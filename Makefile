@@ -1,6 +1,6 @@
 IMAGE_REGISTY ?= chewong
 IMAGE_NAME := rg-cleanup
-IMAGE_VERSION ?= v0.1.0
+IMAGE_VERSION ?= v0.1.1
 
 .PHONY: all
 all: build
