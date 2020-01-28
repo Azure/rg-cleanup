@@ -13,55 +13,94 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 	fourDaysAgo := time.Now().Add(-defaultTTL - 24*time.Hour).Format(time.RFC3339)
 	testCases := []struct {
 		desc                string
-		rg                  resources.Group
+		rgName              string
+		creationTimestamp   string
+		hasDoNotDelete      bool
 		expectedToBeDeleted bool
 		expectedAge         string
 	}{
 		{
 			desc:                "deletable resource group that has not lived for more than 3 days",
-			rg:                  getResourceGroup("kubetest-123", oneDayAgo),
+			rgName:              "kubetest-123",
+			creationTimestamp:   oneDayAgo,
 			expectedToBeDeleted: false,
 			expectedAge:         "1 days",
 		},
 		{
 			desc:                "kubetest resource group that lives for more than 3 days",
-			rg:                  getResourceGroup("kubetest-456", fourDaysAgo),
+			rgName:              "kubetest-456",
+			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
 		},
 		{
 			desc:                "azuredisk-csi-driver resource group that lives for more than 3 days",
-			rg:                  getResourceGroup("azuredisk-csi-driver-456", fourDaysAgo),
+			rgName:              "azuredisk-csi-driver-456",
+			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
 		},
 		{
 			desc:                "azurefile-csi-driver resource group that lives for more than 3 days",
-			rg:                  getResourceGroup("azurefile-csi-driver-456", fourDaysAgo),
+			rgName:              "azurefile-csi-driver-456",
+			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
 		},
 		{
 			desc:                "blobfuse-csi-driver resource group that lives for more than 3 days",
-			rg:                  getResourceGroup("blobfuse-csi-driver-456", fourDaysAgo),
+			rgName:              "blobfuse-csi-driver-456",
+			creationTimestamp:   fourDaysAgo,
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
+			desc:                "blobfuse-csi-driver resource group that lives for more than 3 days",
+			rgName:              "blobfuse-csi-driver-456",
+			creationTimestamp:   fourDaysAgo,
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
+			desc:                "flannel resource group that lives for more than 3 days",
+			rgName:              "flannel-456",
+			creationTimestamp:   fourDaysAgo,
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
+			desc:                "ctrd resource group that lives for more than 3 days",
+			rgName:              "ctrd-456",
+			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
 		},
 		{
 			desc:                "non-deletable resource group",
-			rg:                  getResourceGroup("resource group", fourDaysAgo),
+			rgName:              "resource group",
+			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: false,
 			expectedAge:         "",
 		},
 		{
 			desc:                "deletable resource group with no creation timestamp",
-			rg:                  getResourceGroup("kubetest-789", ""),
+			rgName:              "kubetest-789",
+			creationTimestamp:   "",
 			expectedToBeDeleted: true,
 			expectedAge:         "probably a long time because it does not have a 'creationTimestamp' tag",
 		},
 		{
 			desc:                "deletable resource group with invalid creation timestamp",
-			rg:                  getResourceGroup("kubetest-789", "invalid creation timestamp"),
+			rgName:              "kubetest-789",
+			creationTimestamp:   "invalid creation timestamp",
+			expectedToBeDeleted: false,
+			expectedAge:         "",
+		},
+		{
+			desc:                "deletable resource group but has a DO-NOT-DELETE tag",
+			rgName:              "kubetest-789",
+			creationTimestamp:   fourDaysAgo,
+			hasDoNotDelete:      true,
 			expectedToBeDeleted: false,
 			expectedAge:         "",
 		},
@@ -69,7 +108,15 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			age, ok := shouldDeleteResourceGroup(tc.rg, defaultTTL)
+			tags := make(map[string]*string)
+			if tc.creationTimestamp != "" {
+				tags[creationTimestampTag] = to.StringPtr(tc.creationTimestamp)
+			}
+			if tc.hasDoNotDelete {
+				tags[doNotDeleteTag] = to.StringPtr("test")
+			}
+			rg := getResourceGroup(tc.rgName, tags)
+			age, ok := shouldDeleteResourceGroup(rg, defaultTTL)
 			if ok != tc.expectedToBeDeleted {
 				t.Fatalf("expected %t, but got %t", tc.expectedToBeDeleted, ok)
 			}
@@ -80,13 +127,7 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 	}
 }
 
-func getResourceGroup(name, creationTimestamp string) resources.Group {
-	var tags map[string]*string
-	if creationTimestamp != "" {
-		tags = map[string]*string{
-			creationTimestampTag: to.StringPtr(creationTimestamp),
-		}
-	}
+func getResourceGroup(name string, tags map[string]*string) resources.Group {
 	return resources.Group{
 		Name: to.StringPtr(name),
 		Tags: tags,

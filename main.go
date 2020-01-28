@@ -18,6 +18,7 @@ import (
 const (
 	defaultTTL            = 3 * 24 * time.Hour
 	creationTimestampTag  = "creationTimestamp"
+	doNotDeleteTag        = "DO-NOT-DELETE"
 	aadClientIDEnvVar     = "AAD_CLIENT_ID"
 	aadClientSecretEnvVar = "AAD_CLIENT_SECRET"
 	tenantIDEnvVar        = "TENANT_ID"
@@ -128,6 +129,9 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 		}
 	}
 	if !deletable {
+		return "", false
+	}
+	if _, ok := rg.Tags[doNotDeleteTag]; ok {
 		return "", false
 	}
 
