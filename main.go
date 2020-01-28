@@ -30,6 +30,8 @@ var deletableResourceGroupPrefixes = []string{
 	"azuredisk-csi-driver-",
 	"azurefile-csi-driver-",
 	"blobfuse-csi-driver-",
+	"flannel-",
+	"ctrd-",
 }
 
 type options struct {
