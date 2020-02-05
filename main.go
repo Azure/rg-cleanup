@@ -33,6 +33,7 @@ var deletableResourceGroupPrefixes = []string{
 	"blobfuse-csi-driver-",
 	"flannel-",
 	"ctrd-",
+	"capz-",
 }
 
 type options struct {

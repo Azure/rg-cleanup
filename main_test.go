@@ -76,6 +76,13 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 			expectedAge:         "4 days",
 		},
 		{
+			desc:                "capz resource group that lives for more than 3 days",
+			rgName:              "capz-456",
+			creationTimestamp:   fourDaysAgo,
+			expectedToBeDeleted: true,
+			expectedAge:         "4 days",
+		},
+		{
 			desc:                "non-deletable resource group",
 			rgName:              "resource group",
 			creationTimestamp:   fourDaysAgo,
