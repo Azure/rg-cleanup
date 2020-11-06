@@ -34,6 +34,8 @@ var deletableResourceGroupPrefixes = []string{
 	"flannel-",
 	"ctrd-",
 	"capz-",
+	"image-builder-e2e-",
+	"pkr-Resource-Group-",
 }
 
 type options struct {
