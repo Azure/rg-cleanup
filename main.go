@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,9 +144,15 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 		return fmt.Sprintf("probably a long time because it does not have a '%s' tag", creationTimestampTag), true
 	}
 
-	t, err := time.Parse(time.RFC3339, *creationTimestamp)
+	var t time.Time
+	var err error
+	t, err = time.Parse(time.RFC3339, *creationTimestamp)
 	if err != nil {
-		return "", false
+		unixTimestamp, err := strconv.ParseInt(*creationTimestamp, 10, 64)
+		if err != nil {
+			return "", false
+		}
+		t = time.Unix(unixTimestamp, 0)
 	}
 	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }

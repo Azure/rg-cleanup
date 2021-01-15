@@ -49,14 +49,14 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 		},
 		{
 			desc:                "blobfuse-csi-driver resource group that lives for more than 3 days",
-			rgName:              "blobfuse-csi-driver-456",
+			rgName:              "blob-csi-driver-456",
 			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
 		},
 		{
 			desc:                "blobfuse-csi-driver resource group that lives for more than 3 days",
-			rgName:              "blobfuse-csi-driver-456",
+			rgName:              "blob-csi-driver-456",
 			creationTimestamp:   fourDaysAgo,
 			expectedToBeDeleted: true,
 			expectedAge:         "4 days",
@@ -110,6 +110,14 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 			hasDoNotDelete:      true,
 			expectedToBeDeleted: false,
 			expectedAge:         "",
+		},
+		{
+			desc:                "deletable resource group with unix timestamp",
+			rgName:              "pkr-Resource-Group-123",
+			creationTimestamp:   "1608166242",
+			hasDoNotDelete:      false,
+			expectedToBeDeleted: true,
+			expectedAge:         "29 days",
 		},
 	}
 
