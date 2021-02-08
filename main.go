@@ -34,6 +34,7 @@ var deletableResourceGroupPrefixes = []string{
 	"flannel-",
 	"ctrd-",
 	"capz-",
+	"kcp-adoption-",
 	"image-builder-e2e-",
 	"pkr-Resource-Group-",
 }
