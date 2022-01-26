@@ -25,12 +25,25 @@ const (
 	subscriptionIDEnvVar  = "SUBSCRIPTION_ID"
 )
 
+var rfc3339Layouts = []string{
+	time.RFC3339,
+	time.RFC3339Nano,
+	// The following two layouts are also acceptable
+	// RFC3339 layouts. See:
+	// https://github.com/golang/go/issues/20555#issuecomment-440348440
+	"2006-01-02T15:04:05+0000",
+	"2006-01-02T15:04:05-0000",
+	"2006-01-02T15:04:05-00:00",
+	"2006-01-02T15:04:05+00:00",
+}
+
 // Consider resource groups with one of the following prefixes deletable
 var deletableResourceGroupPrefixes = []string{
 	"kubetest-",
 	"azuredisk-csi-driver-",
 	"azurefile-csi-driver-",
 	"blob-csi-driver-",
+	"blobfuse-csi-driver-",
 	"flannel-",
 	"ctrd-",
 	"capz-",
@@ -151,10 +164,20 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 		return fmt.Sprintf("probably a long time because it does not have a '%s' tag", creationTimestampTag), true
 	}
 
-	t, err := time.Parse(time.RFC3339, *creationTimestamp)
+	var t time.Time
+	var err error
+	for _, layout := range rfc3339Layouts {
+		t, err = time.Parse(layout, *creationTimestamp)
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
+		log.Printf("failed to parse timestamp: %s", err)
 		return "", false
 	}
+
 	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }
 
