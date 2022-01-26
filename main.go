@@ -168,10 +168,9 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 	var err error
 	for _, layout := range rfc3339Layouts {
 		t, err = time.Parse(layout, *creationTimestamp)
-		if err != nil {
-			continue
+		if err == nil {
+			break
 		}
-		break
 	}
 
 	if err != nil {
