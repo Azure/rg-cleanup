@@ -161,7 +161,7 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 
 	creationTimestamp, ok := rg.Tags[creationTimestampTag]
 	if !ok {
-		return fmt.Sprintf("probably a long time because it does not have a '%s' tag", creationTimestampTag), true
+		return fmt.Sprintf("probably a long time because it does not have a '%s' tag. Found tags: %v", creationTimestampTag, rg.Tags), true
 	}
 
 	var t time.Time
