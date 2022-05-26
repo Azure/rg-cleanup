@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
@@ -35,28 +34,6 @@ var rfc3339Layouts = []string{
 	"2006-01-02T15:04:05-0000",
 	"2006-01-02T15:04:05-00:00",
 	"2006-01-02T15:04:05+00:00",
-}
-
-// Consider resource groups with one of the following prefixes deletable
-var deletableResourceGroupPrefixes = []string{
-	"kubetest-",
-	"azuredisk-csi-driver-",
-	"azurefile-csi-driver-",
-	"blob-csi-driver-",
-	"blobfuse-csi-driver-",
-	"flannel-",
-	"ctrd-",
-	"capz-",
-	"clusterctl-",
-	"kcp-adoption-",
-	"md-rollout-",
-	"machine-pool-",
-	"mhc-remediation-",
-	"quick-start-",
-	"md-scale-",
-	"kcp-upgrade-",
-	"image-builder-e2e-",
-	"pkr-Resource-Group-",
 }
 
 type options struct {
@@ -145,16 +122,6 @@ func run(ctx context.Context, r *resources.GroupsClient, ttl time.Duration, dryR
 }
 
 func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, bool) {
-	deletable := false
-	for _, prefix := range deletableResourceGroupPrefixes {
-		if strings.HasPrefix(*rg.Name, prefix) {
-			deletable = true
-			break
-		}
-	}
-	if !deletable {
-		return "", false
-	}
 	if _, ok := rg.Tags[doNotDeleteTag]; ok {
 		return "", false
 	}
