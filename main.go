@@ -120,9 +120,13 @@ func main() {
 
 func run(ctx context.Context, r *resources.GroupsClient, ttl time.Duration, dryRun bool) error {
 	log.Println("Scanning for stale resource groups")
-	for list, err := r.ListComplete(ctx, "", nil); list.NotDone(); err = list.Next() {
+	listComplete, err := r.ListComplete(ctx, "", nil)
+	if err != nil {
+		return fmt.Errorf("Error when listing all resource groups: %v", err)
+	}
+	for list := listComplete; list.NotDone(); err = list.Next() {
 		if err != nil {
-			return fmt.Errorf("Error when listing all resource groups: %v", err)
+			return fmt.Errorf("Error when iterating resource groups: %v", err)
 		}
 
 		rg := list.Value()
