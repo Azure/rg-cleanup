@@ -83,18 +83,11 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 			expectedAge:         "4 days",
 		},
 		{
-			desc:                "non-deletable resource group",
-			rgName:              "resource group",
-			creationTimestamp:   fourDaysAgo,
-			expectedToBeDeleted: false,
-			expectedAge:         "",
-		},
-		{
 			desc:                "deletable resource group with no creation timestamp",
 			rgName:              "kubetest-789",
 			creationTimestamp:   "",
 			expectedToBeDeleted: true,
-			expectedAge:         "probably a long time because it does not have a 'creationTimestamp' tag",
+			expectedAge:         "probably a long time because it does not have a 'creationTimestamp' tag. Found tags: map[]",
 		},
 		{
 			desc:                "deletable resource group with invalid creation timestamp",
