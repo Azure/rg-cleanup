@@ -1,4 +1,4 @@
-IMAGE_REGISTRY ?= chewong
+IMAGE_REGISTY ?= k8sprow.azurecr.io
 IMAGE_NAME := rg-cleanup
 IMAGE_VERSION ?= v0.1.1
 
