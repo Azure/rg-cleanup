@@ -1,4 +1,4 @@
-IMAGE_REGISTY ?= chewong
+IMAGE_REGISTY ?= k8sprow.azurecr.io
 IMAGE_NAME := rg-cleanup
 IMAGE_VERSION ?= v0.1.1
 
@@ -15,11 +15,11 @@ test:
 
 .PHONY: image
 image: build
-	docker build -t $(IMAGE_REGISTY)/$(IMAGE_NAME):$(IMAGE_VERSION) .
+	docker build -t $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION) .
 
 .PHONY: push
 push:
-	docker push $(IMAGE_REGISTY)/$(IMAGE_NAME):$(IMAGE_VERSION)
+	docker push $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 
 .PHONY: clean
 clean:
