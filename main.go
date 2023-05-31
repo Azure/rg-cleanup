@@ -8,10 +8,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
-	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/adal"
-	"github.com/Azure/go-autorest/autorest/azure"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 const (
@@ -85,7 +86,7 @@ func main() {
 		log.Println("Dry-run enabled - printing logs but not actually deleting resource groups")
 	}
 
-	r, err := getResourceGroupClient(azure.PublicCloud, o.clientID, o.clientSecret, o.tenantID, o.subscriptionID)
+	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID)
 	if err != nil {
 		log.Fatalf("Error when obtaining resource group client: %v", err)
 	}
@@ -95,29 +96,29 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, r *resources.GroupsClient, ttl time.Duration, dryRun bool) error {
+func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Duration, dryRun bool) error {
 	log.Println("Scanning for stale resource groups")
-	listComplete, err := r.ListComplete(ctx, "", nil)
-	if err != nil {
-		return fmt.Errorf("Error when listing all resource groups: %v", err)
-	}
-	for list := listComplete; list.NotDone(); err = list.Next() {
+
+	pager := r.NewListPager(nil)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
 			return fmt.Errorf("Error when iterating resource groups: %v", err)
 		}
+		for _, rg := range nextResult.Value {
+			rgName := *rg.Name
+			if age, ok := shouldDeleteResourceGroup(rg, ttl); ok {
+				if dryRun {
+					log.Printf("Dry-run: skip deletion of eligible resource group '%s' (age: %s)", rgName, age)
+					continue
+				}
 
-		rg := list.Value()
-		rgName := *rg.Name
-		if age, ok := shouldDeleteResourceGroup(rg, ttl); ok {
-			// Does not wait when deleting a resource group
-			log.Printf("Deleting resource group '%s' (age: %s)", rgName, age)
-			if dryRun {
-				continue
-			}
-
-			_, err = r.Delete(ctx, rgName)
-			if err != nil {
-				log.Printf("Error when deleting %s: %v", rgName, err)
+				// Start the delete without waiting for it to complete.
+				log.Printf("Beginning to delete resource group '%s' (age: %s)", rgName, age)
+				_, err = r.BeginDelete(ctx, rgName, nil)
+				if err != nil {
+					log.Printf("Error when deleting %s: %v", rgName, err)
+				}
 			}
 		}
 	}
@@ -125,7 +126,7 @@ func run(ctx context.Context, r *resources.GroupsClient, ttl time.Duration, dryR
 	return nil
 }
 
-func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, bool) {
+func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration) (string, bool) {
 	if _, ok := rg.Tags[doNotDeleteTag]; ok {
 		return "", false
 	}
@@ -152,18 +153,20 @@ func shouldDeleteResourceGroup(rg resources.Group, ttl time.Duration) (string, b
 	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }
 
-func getResourceGroupClient(env azure.Environment, clientID, clientSecret, tenantID, subscriptionID string) (*resources.GroupsClient, error) {
-	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, tenantID)
+func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string) (*armresources.ResourceGroupsClient, error) {
+	options := arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: cloud.AzurePublic,
+		},
+	}
+
+	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	armSpt, err := adal.NewServicePrincipalToken(*oauthConfig, clientID, clientSecret, env.ServiceManagementEndpoint)
+	clientFactory, err := armresources.NewClientFactory(subscriptionID, credential, &options)
 	if err != nil {
 		return nil, err
 	}
-
-	r := resources.NewGroupsClientWithBaseURI(env.ResourceManagerEndpoint, subscriptionID)
-	r.Authorizer = autorest.NewBearerAuthorizer(armSpt)
-	return &r, err
+	return clientFactory.NewResourceGroupsClient(), nil
 }

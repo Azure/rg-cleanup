@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	resources "github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2018-05-01/resources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/go-autorest/autorest/to"
 )
 
@@ -116,7 +116,7 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 				tags[doNotDeleteTag] = to.StringPtr("test")
 			}
 			rg := getResourceGroup(tc.rgName, tags)
-			age, ok := shouldDeleteResourceGroup(rg, defaultTTL)
+			age, ok := shouldDeleteResourceGroup(&rg, defaultTTL)
 			if ok != tc.expectedToBeDeleted {
 				t.Fatalf("expected %t, but got %t", tc.expectedToBeDeleted, ok)
 			}
@@ -127,8 +127,8 @@ func TestShouldDeleteResourceGroup(t *testing.T) {
 	}
 }
 
-func getResourceGroup(name string, tags map[string]*string) resources.Group {
-	return resources.Group{
+func getResourceGroup(name string, tags map[string]*string) armresources.ResourceGroup {
+	return armresources.ResourceGroup{
 		Name: to.StringPtr(name),
 		Tags: tags,
 	}
