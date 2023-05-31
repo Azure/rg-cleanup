@@ -1,3 +1,3 @@
-FROM alpine:3.10.3
+FROM alpine:3.18
 COPY bin/rg-cleanup /usr/local/bin
 ENTRYPOINT [ "rg-cleanup" ]
