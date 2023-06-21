@@ -8,21 +8,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 const (
-	defaultTTL            = 3 * 24 * time.Hour
-	creationTimestampTag  = "creationTimestamp"
-	doNotDeleteTag        = "DO-NOT-DELETE"
-	aadClientIDEnvVar     = "AAD_CLIENT_ID"
-	aadClientSecretEnvVar = "AAD_CLIENT_SECRET"
-	tenantIDEnvVar        = "TENANT_ID"
-	subscriptionIDEnvVar  = "SUBSCRIPTION_ID"
+	defaultTTL           = 3 * 24 * time.Hour
+	creationTimestampTag = "creationTimestamp"
+	doNotDeleteTag       = "DO-NOT-DELETE"
+	tenantIDEnvVar       = "AZURE_TENANT_ID"
+	subscriptionIDEnvVar = "AZURE_SUBSCRIPTION_ID"
 )
 
 var rfc3339Layouts = []string{
@@ -38,8 +33,6 @@ var rfc3339Layouts = []string{
 }
 
 type options struct {
-	clientID       string
-	clientSecret   string
 	tenantID       string
 	subscriptionID string
 	dryRun         bool
@@ -47,12 +40,6 @@ type options struct {
 }
 
 func (o *options) validate() error {
-	if o.clientID == "" {
-		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
-	}
-	if o.clientSecret == "" {
-		return fmt.Errorf("$%s is empty", aadClientSecretEnvVar)
-	}
 	if o.tenantID == "" {
 		return fmt.Errorf("$%s is empty", tenantIDEnvVar)
 	}
@@ -64,8 +51,6 @@ func (o *options) validate() error {
 
 func defineOptions() *options {
 	o := options{}
-	o.clientID = os.Getenv(aadClientIDEnvVar)
-	o.clientSecret = os.Getenv(aadClientSecretEnvVar)
 	o.tenantID = os.Getenv(tenantIDEnvVar)
 	o.subscriptionID = os.Getenv(subscriptionIDEnvVar)
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
@@ -79,20 +64,23 @@ func main() {
 
 	o := defineOptions()
 	if err := o.validate(); err != nil {
-		log.Fatalf("Error when validating options: %v", err)
+		log.Printf("Error when validating options: %v", err)
+		return
 	}
 
 	if o.dryRun {
 		log.Println("Dry-run enabled - printing logs but not actually deleting resource groups")
 	}
 
-	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID)
+	r, err := getResourceGroupClient(o.tenantID, o.subscriptionID)
 	if err != nil {
-		log.Fatalf("Error when obtaining resource group client: %v", err)
+		log.Printf("Error when obtaining resource group client: %v", err)
+		return
 	}
 
 	if err := run(context.Background(), r, o.ttl, o.dryRun); err != nil {
-		log.Fatalf("Error when running rg-cleanup: %v", err)
+		log.Printf("Error when running rg-cleanup: %v", err)
+		return
 	}
 }
 
@@ -153,20 +141,18 @@ func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration
 	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }
 
-func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string) (*armresources.ResourceGroupsClient, error) {
-	options := arm.ClientOptions{
-		ClientOptions: azcore.ClientOptions{
-			Cloud: cloud.AzurePublic,
-		},
+func getResourceGroupClient(tenantID, subscriptionID string) (*armresources.ResourceGroupsClient, error) {
+	log.Println("New default Credentials...")
+
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		log.Fatalf("failed to obtain a credential: %v", err)
 	}
 
-	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	client, err := armresources.NewResourceGroupsClient(subscriptionID, cred, nil)
 	if err != nil {
-		return nil, err
+		log.Fatalf("failed to create a client: %v", err)
 	}
-	clientFactory, err := armresources.NewClientFactory(subscriptionID, credential, &options)
-	if err != nil {
-		return nil, err
-	}
-	return clientFactory.NewResourceGroupsClient(), nil
+
+	return client, nil
 }
