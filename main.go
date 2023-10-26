@@ -44,20 +44,24 @@ type options struct {
 	subscriptionID string
 	dryRun         bool
 	ttl            time.Duration
+	identity       bool
 }
 
 func (o *options) validate() error {
 	if o.clientID == "" {
 		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
 	}
+	if o.subscriptionID == "" {
+		return fmt.Errorf("$%s is empty", subscriptionIDEnvVar)
+	}
+	if o.identity {
+		return nil
+	}
 	if o.clientSecret == "" {
 		return fmt.Errorf("$%s is empty", aadClientSecretEnvVar)
 	}
 	if o.tenantID == "" {
 		return fmt.Errorf("$%s is empty", tenantIDEnvVar)
-	}
-	if o.subscriptionID == "" {
-		return fmt.Errorf("$%s is empty", subscriptionIDEnvVar)
 	}
 	return nil
 }
@@ -69,6 +73,7 @@ func defineOptions() *options {
 	o.tenantID = os.Getenv(tenantIDEnvVar)
 	o.subscriptionID = os.Getenv(subscriptionIDEnvVar)
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
+	flag.BoolVar(&o.identity, "identity", false, "Set to true if we should user-assigned identity for AUTH")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
 	flag.Parse()
 	return &o
@@ -86,7 +91,7 @@ func main() {
 		log.Println("Dry-run enabled - printing logs but not actually deleting resource groups")
 	}
 
-	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID)
+	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID, o.identity)
 	if err != nil {
 		log.Fatalf("Error when obtaining resource group client: %v", err)
 	}
@@ -103,7 +108,7 @@ func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Dur
 	for pager.More() {
 		nextResult, err := pager.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("Error when iterating resource groups: %v", err)
+			return fmt.Errorf("error when iterating resource groups: %v", err)
 		}
 		for _, rg := range nextResult.Value {
 			rgName := *rg.Name
@@ -153,20 +158,36 @@ func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration
 	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
 }
 
-func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string) (*armresources.ResourceGroupsClient, error) {
+func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string, identity bool) (*armresources.ResourceGroupsClient, error) {
 	options := arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Cloud: cloud.AzurePublic,
 		},
 	}
-
-	credential, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	possibleTokens := []azcore.TokenCredential{}
+	if identity {
+		micOptions := azidentity.ManagedIdentityCredentialOptions{
+			ID: azidentity.ClientID(clientID),
+		}
+		miCred, err := azidentity.NewManagedIdentityCredential(&micOptions)
+		if err != nil {
+			return nil, err
+		}
+		possibleTokens = append(possibleTokens, miCred)
+	} else {
+		spCred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+		if err != nil {
+			return nil, err
+		}
+		possibleTokens = append(possibleTokens, spCred)
+	}
+	chain, err := azidentity.NewChainedTokenCredential(possibleTokens, nil)
 	if err != nil {
 		return nil, err
 	}
-	clientFactory, err := armresources.NewClientFactory(subscriptionID, credential, &options)
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, chain, &options)
 	if err != nil {
 		return nil, err
 	}
-	return clientFactory.NewResourceGroupsClient(), nil
+	return resourceGroupClient, nil
 }
