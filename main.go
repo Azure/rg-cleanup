@@ -84,7 +84,8 @@ func main() {
 
 	o := defineOptions()
 	if err := o.validate(); err != nil {
-		log.Fatalf("Error when validating options: %v", err)
+		log.Printf("Error when validating options: %v", err)
+		panic(err)
 	}
 
 	if o.dryRun {
@@ -93,11 +94,13 @@ func main() {
 
 	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID, o.identity)
 	if err != nil {
-		log.Fatalf("Error when obtaining resource group client: %v", err)
+		log.Printf("Error when obtaining resource group client: %v", err)
+		panic(err)
 	}
 
 	if err := run(context.Background(), r, o.ttl, o.dryRun); err != nil {
-		log.Fatalf("Error when running rg-cleanup: %v", err)
+		log.Printf("Error when running rg-cleanup: %v", err)
+		panic(err)
 	}
 }
 
@@ -155,7 +158,7 @@ func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration
 		return "", false
 	}
 
-	return fmt.Sprintf("%d days", int(time.Since(t).Hours()/24)), time.Since(t) >= ttl
+	return fmt.Sprintf("%d days (%d hours)", int(time.Since(t).Hours()/24), int(time.Since(t).Hours())), time.Since(t) >= ttl
 }
 
 func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string, identity bool) (*armresources.ResourceGroupsClient, error) {
