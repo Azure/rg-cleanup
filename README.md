@@ -27,3 +27,6 @@ make
 ```
 
 By default, this tool deletes stale resource groups that are older than three days. If you want to customize that, you could add a flag `--ttl=...` when running. For example, if you want to delete stale resource groups that are older than one day, add `--ttl=1d`.
+
+Regex support, use `--regex "<string-regex-pattern>"` this flag this will look into fully match regex with resource group name, meaning partially regex pattern will not match:
+RG Name `kubetest-123` if we have regex pattern `kube` this will not match. A matching pattern will look like `^kube.+$`, `kube.+$`, `^kube.+`, etc.
