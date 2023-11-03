@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -17,6 +18,7 @@ import (
 
 const (
 	defaultTTL            = 3 * 24 * time.Hour
+	defaultRegex          = ""
 	creationTimestampTag  = "creationTimestamp"
 	doNotDeleteTag        = "DO-NOT-DELETE"
 	aadClientIDEnvVar     = "AAD_CLIENT_ID"
@@ -45,6 +47,7 @@ type options struct {
 	dryRun         bool
 	ttl            time.Duration
 	identity       bool
+	regex          string
 }
 
 func (o *options) validate() error {
@@ -75,6 +78,7 @@ func defineOptions() *options {
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
 	flag.BoolVar(&o.identity, "identity", false, "Set to true if we should user-assigned identity for AUTH")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
+	flag.StringVar(&o.regex, "regex", defaultRegex, "Only delete resource groups matching regex")
 	flag.Parse()
 	return &o
 }
@@ -98,13 +102,13 @@ func main() {
 		panic(err)
 	}
 
-	if err := run(context.Background(), r, o.ttl, o.dryRun); err != nil {
+	if err := run(context.Background(), r, o.ttl, o.dryRun, o.regex); err != nil {
 		log.Printf("Error when running rg-cleanup: %v", err)
 		panic(err)
 	}
 }
 
-func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Duration, dryRun bool) error {
+func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Duration, dryRun bool, regex string) error {
 	log.Println("Scanning for stale resource groups")
 
 	pager := r.NewListPager(nil)
@@ -115,7 +119,7 @@ func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Dur
 		}
 		for _, rg := range nextResult.Value {
 			rgName := *rg.Name
-			if age, ok := shouldDeleteResourceGroup(rg, ttl); ok {
+			if age, ok := shouldDeleteResourceGroup(rg, ttl, regex); ok {
 				if dryRun {
 					log.Printf("Dry-run: skip deletion of eligible resource group '%s' (age: %s)", rgName, age)
 					continue
@@ -134,9 +138,22 @@ func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Dur
 	return nil
 }
 
-func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration) (string, bool) {
+func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration, regex string) (string, bool) {
 	if _, ok := rg.Tags[doNotDeleteTag]; ok {
 		return "", false
+	}
+
+	if regex != "" {
+		match, err := regexMatchesResourceGroupName(regex, *rg.Name)
+		if err != nil {
+			log.Printf("failed to regex Resource Group Name: %s", err)
+			return "", false
+		}
+		if !match {
+			log.Printf("RG '%s' did not match regex", *rg.Name)
+			return "", false
+		}
+		log.Printf("RG '%s' matched regex '%s'", *rg.Name, regex)
 	}
 
 	creationTimestamp, ok := rg.Tags[creationTimestampTag]
@@ -159,6 +176,21 @@ func shouldDeleteResourceGroup(rg *armresources.ResourceGroup, ttl time.Duration
 	}
 
 	return fmt.Sprintf("%d days (%d hours)", int(time.Since(t).Hours()/24), int(time.Since(t).Hours())), time.Since(t) >= ttl
+}
+
+func regexMatchesResourceGroupName(regex string, rgName string) (bool, error) {
+	if regex != "" {
+		rgx, err := regexp.Compile(regex)
+		if err != nil {
+			return false, fmt.Errorf("failed to compile regex: %v", err)
+		}
+		match := rgx.FindString(rgName)
+		if match != rgName {
+			return false, nil
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string, identity bool) (*armresources.ResourceGroupsClient, error) {
