@@ -120,7 +120,7 @@ resource logic_app 'Microsoft.Logic/workflows@2017-07-01' = {
                   }
                 ]
                 osType: 'Linux'
-                restartPolicy: 'OnFailure'
+                restartPolicy: 'Never'
                 sku: 'Standard'
               }
             }
