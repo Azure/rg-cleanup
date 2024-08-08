@@ -13,7 +13,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/go-autorest/autorest/to"
 )
 
 const (
@@ -40,16 +42,18 @@ var rfc3339Layouts = []string{
 }
 
 type options struct {
-	clientID       string
-	clientSecret   string
-	tenantID       string
-	subscriptionID string
-	dryRun         bool
-	ttl            time.Duration
-	identity       bool
-	regex          string
+	clientID        string
+	clientSecret    string
+	tenantID        string
+	subscriptionID  string
+	dryRun          bool
+	ttl             time.Duration
+	identity        bool
+	regex           string
+	roleAssignments bool
 }
 
+// for R_ID in $(az role assignment list --all --include-inherited -o json | jq -r '.[] | select(.scope == "/subscriptions/46678f10-4bbb-447e-98e8-d2829589f2d8" and .principalName=="") .id'); do az role assignment delete --ids $R_ID; done
 func (o *options) validate() error {
 	if o.clientID == "" {
 		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
@@ -79,6 +83,7 @@ func defineOptions() *options {
 	flag.BoolVar(&o.identity, "identity", false, "Set to true if we should user-assigned identity for AUTH")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
 	flag.StringVar(&o.regex, "regex", defaultRegex, "Only delete resource groups matching regex")
+	flag.BoolVar(&o.roleAssignments, "role-assignments", false, "Set to true if we should also delete unattached role assignments")
 	flag.Parse()
 	return &o
 }
@@ -102,13 +107,26 @@ func main() {
 		panic(err)
 	}
 
-	if err := run(context.Background(), r, o.ttl, o.dryRun, o.regex); err != nil {
+	if err := cleanResourceGroups(context.Background(), r, o.ttl, o.dryRun, o.regex); err != nil {
 		log.Printf("Error when running rg-cleanup: %v", err)
 		panic(err)
 	}
+
+	if o.roleAssignments {
+		ra, err := getRoleAssignmentsClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID, o.identity)
+		if err != nil {
+			log.Printf("Error when obtaining resource group client: %v", err)
+			panic(err)
+		}
+
+		if err := cleanRoleAssignments(context.Background(), ra, o.dryRun); err != nil {
+			log.Printf("Error when running rg-cleanup: %v", err)
+			panic(err)
+		}
+	}
 }
 
-func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Duration, dryRun bool, regex string) error {
+func cleanResourceGroups(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Duration, dryRun bool, regex string) error {
 	log.Println("Scanning for stale resource groups")
 
 	pager := r.NewListPager(nil)
@@ -131,6 +149,34 @@ func run(ctx context.Context, r *armresources.ResourceGroupsClient, ttl time.Dur
 				if err != nil {
 					log.Printf("Error when deleting %s: %v", rgName, err)
 				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func cleanRoleAssignments(ctx context.Context, r *armauthorization.RoleAssignmentsClient, dryRun bool) error {
+	log.Println("Scanning for unattached role assignments")
+
+	opts := armauthorization.RoleAssignmentsClientListForSubscriptionOptions{
+		Filter: to.StringPtr("principalId eq ''"),
+	}
+	pager := r.NewListForSubscriptionPager(&opts)
+	for pager.More() {
+		nextResult, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Printf("error when iterating role assignments: %v", err)
+		}
+		for _, ra := range nextResult.Value {
+			if dryRun {
+				log.Printf("Dry-run: skip deletion of unattached role assignment '%s'", *ra.ID)
+				continue
+			}
+			log.Printf("Beginning to delete unattached role assignment '%s'", *ra.ID)
+			_, err := r.DeleteByID(ctx, *ra.ID, nil)
+			if err != nil {
+				log.Printf("Error when deleting %s: %v", *ra.ID, err)
 			}
 		}
 	}
@@ -225,4 +271,38 @@ func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID str
 		return nil, err
 	}
 	return resourceGroupClient, nil
+}
+
+func getRoleAssignmentsClient(clientID, clientSecret, tenantID, subscriptionID string, identity bool) (*armauthorization.RoleAssignmentsClient, error) {
+	options := arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: cloud.AzurePublic,
+		},
+	}
+	possibleTokens := []azcore.TokenCredential{}
+	if identity {
+		micOptions := azidentity.ManagedIdentityCredentialOptions{
+			ID: azidentity.ClientID(clientID),
+		}
+		miCred, err := azidentity.NewManagedIdentityCredential(&micOptions)
+		if err != nil {
+			return nil, err
+		}
+		possibleTokens = append(possibleTokens, miCred)
+	} else {
+		spCred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+		if err != nil {
+			return nil, err
+		}
+		possibleTokens = append(possibleTokens, spCred)
+	}
+	chain, err := azidentity.NewChainedTokenCredential(possibleTokens, nil)
+	if err != nil {
+		return nil, err
+	}
+	roleAssignmentsClient, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, chain, &options)
+	if err != nil {
+		return nil, err
+	}
+	return roleAssignmentsClient, nil
 }
