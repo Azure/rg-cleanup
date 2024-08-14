@@ -46,3 +46,30 @@ az deployment group create -g "<rg-name>" -f ./templates/rg-cleaner-logic-app-ua
     regex="<regex expression patter>" # Optional
 # Other optional parameters are available, please refer to the deployment bicep file.
 ```
+
+### Orphaned Role Assignment cleanup
+
+The tool also provides a way to clean up orphaned role assignments. This is useful when you have role assignments that are no longer associated with any resource groups. To enable this feature, you can use the `--role-assignment` flag when running the tool.
+
+This relies on a correlated query with the Microsoft Graph API, the permissions for which can be granted with a script like this:
+
+```powershell
+Connect-AzureAD
+    
+$GraphAppId = "00000003-0000-0000-c000-000000000000" # Don't change this value
+$NameOfMSI = "rg-cleanup-og"
+$Permissions = @(
+	"Application.Read.All",
+	"Directory.Read.All",
+	"User.Read.All",
+)
+
+$MSI = (Get-AzureADServicePrincipal -Filter "displayName eq '$NameOfMSI'")
+Start-Sleep -Seconds 10
+$GraphServicePrincipal = Get-AzureADServicePrincipal -Filter "appId eq '$GraphAppId'"
+
+foreach ($PermissionName in $Permissions) {
+	$AppRole = $GraphServicePrincipal.AppRoles | Where-Object { $_.Value -eq $PermissionName -and $_.AllowedMemberTypes -contains "Application" }
+	New-AzureAdServiceAppRoleAssignment -ObjectId $MSI.ObjectId -PrincipalId $MSI.ObjectId -ResourceId $GraphServicePrincipal.ObjectId -Id $AppRole.Id
+}
+```

@@ -8,12 +8,13 @@ param aci string = 'aci'
 param dryrun bool = true
 param ttl string = ''
 param regex string = ''
+param role_assignments bool = true
 param csubscription string = subscription().subscriptionId
 param location string = resourceGroup().location
 param rg_name string = resourceGroup().name
 
 var default_container_cmd = [
-  'rg-cleanup'
+  'rg-cleanup.sh'
   '--identity'
 ]
 var dryrun_cmd = [
@@ -27,9 +28,12 @@ var regex_cmd = [
   '--regex'
   regex
 ]
+var role_assignments_cmd = [
+  '--role-assignments'
+]
 var add_regex_cmd = concat(default_container_cmd, empty(regex) ? [] : regex_cmd)
 var add_ttl_cmd = concat(add_regex_cmd, empty(ttl) ? [] : ttl_cmd)
-var container_command = concat(add_ttl_cmd, dryrun ? dryrun_cmd : [])
+var container_command = concat(add_ttl_cmd, dryrun ? dryrun_cmd : [], role_assignments ? role_assignments_cmd : [])
 
 var encoded_sub = uriComponent(csubscription)
 var encoded_rg = uriComponent(rg_name)
@@ -43,7 +47,7 @@ var cg_id = '${rg_id}/providers/Microsoft.ContainerInstance/containerGroups/${en
 var cn_id = '${cg_id}/containers/${encoded_cn}'
 var aci_api_id = '/subscriptions/${csubscription}/providers/Microsoft.Web/locations/${location}/managedApis/aci'
 
-resource logic_app 'Microsoft.Logic/workflows@2017-07-01' = {
+resource logic_app 'Microsoft.Logic/workflows@2019-05-01' = {
   name: logic_app_name
   location: location
   identity: {
@@ -136,20 +140,6 @@ resource logic_app 'Microsoft.Logic/workflows@2017-07-01' = {
             }
           }
         }
-        Delay: {
-          runAfter: {
-            Create_or_update_a_container_group: [
-              'Succeeded'
-            ]
-          }
-          type: 'Wait'
-          inputs: {
-            interval: {
-              count: 1
-              unit: 'Minute'
-            }
-          }
-        }
         Delete_a_container_group: {
           runAfter: {
             Get_logs_from_a_container_instance: [
@@ -175,7 +165,7 @@ resource logic_app 'Microsoft.Logic/workflows@2017-07-01' = {
         }
         Get_logs_from_a_container_instance: {
           runAfter: {
-            Delay: [
+            Until: [
               'Succeeded'
             ]
           }
@@ -192,6 +182,106 @@ resource logic_app 'Microsoft.Logic/workflows@2017-07-01' = {
               'x-ms-api-version': '2019-12-01'
             }
           }
+        }
+        Get_properties_of_a_container_group: {
+          runAfter: {
+            Create_or_update_a_container_group: [
+              'Succeeded'
+            ]
+          }
+          type: 'ApiConnection'
+          inputs: {
+            host: {
+              connection: {
+                name: '@parameters(\'$connections\')[\'aci\'][\'connectionId\']'
+              }
+            }
+            method: 'get'
+            path: cg_id
+            queries: {
+              'x-ms-api-version': '2019-12-01'
+            }
+          }
+        }
+        Initialize_variable: {
+          runAfter: {
+            Get_properties_of_a_container_group: [
+              'Succeeded'
+            ]
+          }
+          type: 'InitializeVariable'
+          inputs: {
+            variables: [
+              {
+                name: 'complete'
+                type: 'string'
+                value: '@body(\'Get_properties_of_a_container_group\')?[\'properties\']?[\'instanceView\']?[\'state\']'
+              }
+            ]
+          }
+        }
+        Until: {
+          actions: {
+            Get_properties_of_a_container_group_loop: {
+              type: 'ApiConnection'
+              inputs: {
+                host: {
+                  connection: {
+                    name: '@parameters(\'$connections\')[\'aci\'][\'connectionId\']'
+                  }
+                }
+                method: 'get'
+                path: cg_id
+                queries: {
+                  'x-ms-api-version': '2019-12-01'
+                }
+              }
+            }
+            // this works because there is only one container in the group, otherwise it might overwrite the variable
+            For_each: {
+              foreach: '@body(\'Get_properties_of_a_container_group_loop\')[\'properties\'][\'containers\']'
+              actions: {
+                Set_variable: {
+                  type: 'SetVariable'
+                  inputs: {
+                    name: 'complete'
+                    value: '@items(\'For_each\')?[\'properties\']?[\'instanceView\']?[\'currentState\']?[\'state\']'
+                  }
+                }
+              }
+              runAfter: {
+                Get_properties_of_a_container_group_loop: [
+                  'Succeeded'
+                ]
+              }
+              type: 'Foreach'
+            }
+            Delay: {
+              runAfter: {
+                For_each: [
+                  'Succeeded'
+                ]
+              }
+              type: 'Wait'
+              inputs: {
+                interval: {
+                  count: 1
+                  unit: 'Minute'
+                }
+              }
+            }
+          }
+          runAfter: {
+            Initialize_variable: [
+              'Succeeded'
+            ]
+          }
+          expression: '@equals(variables(\'complete\'),\'Terminated\')'
+          limit: {
+            count: 60
+            timeout: 'PT1H'
+          }
+          type: 'Until'
         }
       }
       outputs: {
