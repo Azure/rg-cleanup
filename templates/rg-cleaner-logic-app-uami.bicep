@@ -14,7 +14,7 @@ param location string = resourceGroup().location
 param rg_name string = resourceGroup().name
 
 var default_container_cmd = [
-  'rg-cleanup.sh'
+  'rg-cleanup'
   '--identity'
 ]
 var dryrun_cmd = [

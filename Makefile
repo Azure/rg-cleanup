@@ -1,6 +1,6 @@
 IMAGE_REGISTRY ?= k8sprowcomm.azurecr.io
 IMAGE_NAME := rg-cleanup
-IMAGE_VERSION ?= v0.4.6
+IMAGE_VERSION ?= v0.4.7
 
 .PHONY: all
 all: build
