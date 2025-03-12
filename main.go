@@ -48,14 +48,18 @@ type options struct {
 	ttl            time.Duration
 	identity       bool
 	regex          string
+	cli            bool
 }
 
 func (o *options) validate() error {
-	if o.clientID == "" {
-		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
-	}
 	if o.subscriptionID == "" {
 		return fmt.Errorf("$%s is empty", subscriptionIDEnvVar)
+	}
+	if o.cli {
+		return nil
+	}
+	if o.clientID == "" {
+		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
 	}
 	if o.identity {
 		return nil
@@ -77,6 +81,7 @@ func defineOptions() *options {
 	o.subscriptionID = os.Getenv(subscriptionIDEnvVar)
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
 	flag.BoolVar(&o.identity, "identity", false, "Set to true if we should user-assigned identity for AUTH")
+	flag.BoolVar(&o.cli, "az-cli", false, "Set to true if we should use az cli for AUTH")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
 	flag.StringVar(&o.regex, "regex", defaultRegex, "Only delete resource groups matching regex")
 	flag.Parse()
@@ -85,6 +90,7 @@ func defineOptions() *options {
 
 func main() {
 	log.Println("Initializing rg-cleanup")
+	log.Printf("args: %v\n", os.Args)
 
 	o := defineOptions()
 	if err := o.validate(); err != nil {
@@ -96,7 +102,7 @@ func main() {
 		log.Println("Dry-run enabled - printing logs but not actually deleting resource groups")
 	}
 
-	r, err := getResourceGroupClient(o.clientID, o.clientSecret, o.tenantID, o.subscriptionID, o.identity)
+	r, err := getResourceGroupClient(*o)
 	if err != nil {
 		log.Printf("Error when obtaining resource group client: %v", err)
 		panic(err)
@@ -193,34 +199,42 @@ func regexMatchesResourceGroupName(regex string, rgName string) (bool, error) {
 	return false, nil
 }
 
-func getResourceGroupClient(clientID, clientSecret, tenantID, subscriptionID string, identity bool) (*armresources.ResourceGroupsClient, error) {
+func getResourceGroupClient(o options) (*armresources.ResourceGroupsClient, error) {
 	options := arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Cloud: cloud.AzurePublic,
 		},
 	}
 	possibleTokens := []azcore.TokenCredential{}
-	if identity {
+	if o.identity {
 		micOptions := azidentity.ManagedIdentityCredentialOptions{
-			ID: azidentity.ClientID(clientID),
+			ID: azidentity.ClientID(o.clientID),
 		}
 		miCred, err := azidentity.NewManagedIdentityCredential(&micOptions)
 		if err != nil {
 			return nil, err
 		}
 		possibleTokens = append(possibleTokens, miCred)
-	} else {
-		spCred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	} else if o.clientSecret != "" {
+		spCred, err := azidentity.NewClientSecretCredential(o.tenantID, o.clientID, o.clientSecret, nil)
 		if err != nil {
 			return nil, err
 		}
 		possibleTokens = append(possibleTokens, spCred)
+	} else if o.cli {
+		cliCred, err := azidentity.NewAzureCLICredential(nil)
+		if err != nil {
+			return nil, err
+		}
+		possibleTokens = append(possibleTokens, cliCred)
+	} else {
+		log.Println("unknown login option. login may not succeed")
 	}
 	chain, err := azidentity.NewChainedTokenCredential(possibleTokens, nil)
 	if err != nil {
 		return nil, err
 	}
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, chain, &options)
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(o.subscriptionID, chain, &options)
 	if err != nil {
 		return nil, err
 	}
