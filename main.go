@@ -55,33 +55,13 @@ func (o *options) validate() error {
 	if o.subscriptionID == "" {
 		return fmt.Errorf("$%s is empty", subscriptionIDEnvVar)
 	}
-	if o.cli {
-		return nil
-	}
-	if o.clientID == "" {
-		return fmt.Errorf("$%s is empty", aadClientIDEnvVar)
-	}
-	if o.identity {
-		return nil
-	}
-	if o.clientSecret == "" {
-		return fmt.Errorf("$%s is empty", aadClientSecretEnvVar)
-	}
-	if o.tenantID == "" {
-		return fmt.Errorf("$%s is empty", tenantIDEnvVar)
-	}
 	return nil
 }
 
 func defineOptions() *options {
 	o := options{}
-	o.clientID = os.Getenv(aadClientIDEnvVar)
-	o.clientSecret = os.Getenv(aadClientSecretEnvVar)
-	o.tenantID = os.Getenv(tenantIDEnvVar)
 	o.subscriptionID = os.Getenv(subscriptionIDEnvVar)
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Set to true if we should run the cleanup tool without deleting the resource groups.")
-	flag.BoolVar(&o.identity, "identity", false, "Set to true if we should user-assigned identity for AUTH")
-	flag.BoolVar(&o.cli, "az-cli", false, "Set to true if we should use az cli for AUTH")
 	flag.DurationVar(&o.ttl, "ttl", defaultTTL, "The duration we allow resource groups to live before we consider them to be stale.")
 	flag.StringVar(&o.regex, "regex", defaultRegex, "Only delete resource groups matching regex")
 	flag.Parse()
@@ -95,7 +75,7 @@ func main() {
 	o := defineOptions()
 	if err := o.validate(); err != nil {
 		log.Printf("Error when validating options: %v", err)
-		panic(err)
+		os.Exit(1)
 	}
 
 	if o.dryRun {
@@ -205,36 +185,12 @@ func getResourceGroupClient(o options) (*armresources.ResourceGroupsClient, erro
 			Cloud: cloud.AzurePublic,
 		},
 	}
-	possibleTokens := []azcore.TokenCredential{}
-	if o.identity {
-		micOptions := azidentity.ManagedIdentityCredentialOptions{
-			ID: azidentity.ClientID(o.clientID),
-		}
-		miCred, err := azidentity.NewManagedIdentityCredential(&micOptions)
-		if err != nil {
-			return nil, err
-		}
-		possibleTokens = append(possibleTokens, miCred)
-	} else if o.clientSecret != "" {
-		spCred, err := azidentity.NewClientSecretCredential(o.tenantID, o.clientID, o.clientSecret, nil)
-		if err != nil {
-			return nil, err
-		}
-		possibleTokens = append(possibleTokens, spCred)
-	} else if o.cli {
-		cliCred, err := azidentity.NewAzureCLICredential(nil)
-		if err != nil {
-			return nil, err
-		}
-		possibleTokens = append(possibleTokens, cliCred)
-	} else {
-		log.Println("unknown login option. login may not succeed")
-	}
-	chain, err := azidentity.NewChainedTokenCredential(possibleTokens, nil)
+	// https://learn.microsoft.com/en-gb/azure/developer/go/sdk/authentication/credential-chains#defaultazurecredential-overview
+	credentials, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(o.subscriptionID, chain, &options)
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(o.subscriptionID, credentials, &options)
 	if err != nil {
 		return nil, err
 	}

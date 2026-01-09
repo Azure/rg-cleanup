@@ -1,29 +1,23 @@
 # rg-cleanup
+
 A tool that bulk removes stale resource groups in an Azure subscription.
 
 ## Usage
 
 ### Prerequisites
 
-- Service principal credentials or User Assigned Managed Identity (CLIENT_ID)
+- Valid Azure [Credentials](https://learn.microsoft.com/en-gb/azure/developer/go/sdk/authentication/credential-chains#defaultazurecredential-overview)
 - An Azure subscription
 
 ```bash
-export AAD_CLIENT_ID=...
+# Authenticating with a Service Principal
+export AZURE_CLIENT_ID=...
+export AZURE_CLIENT_SECRET=...
+export AZURE_TENANT_ID=...
 export SUBSCRIPTION_ID=...
-export AAD_CLIENT_SECRET=...
-export TENANT_ID=...
+
 make
 ./bin/rg-cleanup
-```
-
-Use `--identity` to use UAMI
-
-```bash
-export AAD_CLIENT_ID="<CLIENT_ID>"
-export SUBSCRIPTION_ID="<SUBSCRIPTION_ID>"
-make
-./bin/rg-cleanup --identity
 ```
 
 By default, this tool deletes stale resource groups that are older than three days. If you want to customize that, you could add a flag `--ttl=...` when running. For example, if you want to delete stale resource groups that are older than one day, add `--ttl=1d`.
@@ -33,9 +27,11 @@ RG Name `kubetest-123` if we have regex pattern `kube` this will not match. A ma
 
 A deployment bicep file for a logic app running rg-cleanup is available under [templates](./templates):
 The following example deployment command assumes:
+
 1. You already set up a user-managed identity (UAMI) and a resource group.
 2. You have available the rg-cleanup image in a registry.
-The resources will get deployed to the same resource group as the UAMI.
+   The resources will get deployed to the same resource group as the UAMI.
+
 ```sh
 az deployment group create -g "<rg-name>" -f ./templates/rg-cleaner-logic-app-uami.bicep --parameter \
     uami="<UAMI Name>" \ # Required
@@ -55,7 +51,7 @@ This relies on a correlated query with the Microsoft Graph API, the permissions 
 
 ```powershell
 Connect-AzureAD
-    
+
 $GraphAppId = "00000003-0000-0000-c000-000000000000" # Don't change this value
 $NameOfMSI = "rg-cleanup-og"
 $Permissions = @(

@@ -8,17 +8,17 @@ permissions: read-all
 
 jobs:
   test:
-    name: 'Unit Test'
+    name: "Unit Test"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Set up Go 1.20
-        uses: actions/setup-go@fac708d6674e30b6ba41289acaab6d4b75aa0753 # v4.0.1
+      - name: Set up Go 1.24
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
-          go-version: "1.20"
+          go-version: "1.24"
 
       - name: Check out code into the Go module directory
-        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Unit test
         run: |
